@@ -1,0 +1,23 @@
+[package]
+name = "tokenprint"
+version = "0.1.0"
+edition = "2021"
+description = "Tile token/card images onto a large print canvas and export a print-ready PDF"
+
+[features]
+default = ["gui"]
+gui = ["dep:eframe", "dep:rfd"]
+
+[dependencies]
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp"] }
+pdf-writer = "0.12"
+eframe = { version = "0.31", optional = true }
+rfd = { version = "0.15", optional = true }
+lopdf = "0.34"
+
+[[bin]]
+name = "tokenprint"
+required-features = ["gui"]
+
+[profile.release]
+opt-level = 3
