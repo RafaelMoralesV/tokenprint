@@ -177,13 +177,16 @@ impl App {
         };
     }
 
-    fn side(&mut self, ui: &mut egui::Ui, p: &Params, g: &Grid) {
+    /// Renders the side menu.
+    /// Top part: import button + scrollable item list (fills the remaining height).
+    fn items_ui(&mut self, ui: &mut egui::Ui, g: &Grid) {
         ui.heading("Token Print");
         if ui.button("Import images…").clicked() {
-            if let Some(f) = rfd::FileDialog::new()
+            let pick_files = rfd::FileDialog::new()
                 .add_filter("Images", &["png", "jpg", "jpeg", "webp", "pdf"])
-                .pick_files()
-            {
+                .pick_files();
+
+            if let Some(f) = pick_files {
                 self.add_files(f);
             }
         }
@@ -193,38 +196,51 @@ impl App {
         let per = g.per_page();
         let total: usize = self.items.iter().map(|i| i.qty).sum();
         let mut remove = None;
-        for idx in 0..self.items.len() {
-            let others = total - self.items[idx].qty;
-            let it = &mut self.items[idx];
-            ui.horizontal(|ui| {
-                if let Some((_, t)) = &it.tex {
-                    ui.add(
-                        egui::Image::new(SizedTexture::new(t.id(), t.size_vec2())).max_height(48.0),
-                    );
-                }
-                ui.vertical(|ui| {
-                    ui.label(&it.name);
+
+        egui::ScrollArea::vertical()
+            .id_salt("item_list")
+            .auto_shrink([false, false]) // always fill the space left by the bottom panel
+            .show(ui, |ui| {
+                for idx in 0..self.items.len() {
+                    let others = total - self.items[idx].qty;
+                    let it = &mut self.items[idx];
                     ui.horizontal(|ui| {
-                        ui.add(DragValue::new(&mut it.qty).range(0..=999).suffix("×"));
-                        if ui
-                            .small_button("Fill sheet")
-                            .on_hover_text("Fill the free slots on the current sheet")
-                            .clicked()
-                            && per > 0
-                        {
-                            it.qty = per - others % per;
+                        if let Some((_, t)) = &it.tex {
+                            ui.add(
+                                egui::Image::new(SizedTexture::new(t.id(), t.size_vec2()))
+                                    .max_height(48.0),
+                            );
                         }
-                        if ui.small_button("✕").clicked() {
-                            remove = Some(idx);
-                        }
+                        ui.vertical(|ui| {
+                            ui.label(&it.name);
+                            ui.horizontal(|ui| {
+                                ui.add(DragValue::new(&mut it.qty).range(0..=999).suffix("×"));
+                                if ui
+                                    .small_button("Fill sheet")
+                                    .on_hover_text("Fill the free slots on the current sheet")
+                                    .clicked()
+                                    && per > 0
+                                {
+                                    it.qty = per - others % per;
+                                }
+                                if ui.small_button("X").clicked() {
+                                    remove = Some(idx);
+                                }
+                            });
+                        });
                     });
-                });
+                }
             });
-        }
+
         if let Some(i) = remove {
             self.items.remove(i);
         }
-        ui.separator();
+    }
+
+    /// Bottom part: canvas/card settings, summary and export. Always visible.
+    fn settings_ui(&mut self, ui: &mut egui::Ui, p: &Params, g: &Grid) {
+        let per = g.per_page();
+        let total: usize = self.items.iter().map(|i| i.qty).sum();
 
         ui.label("Canvas");
         ui.horizontal(|ui| {
@@ -303,8 +319,10 @@ impl App {
         ));
 
         let is_enabled = total > 0 && per > 0;
-        let btn_export = egui::Button::new("Export PDF…");
-        if ui.add_enabled(is_enabled, btn_export).clicked() {
+        if ui
+            .add_enabled(is_enabled, egui::Button::new("Export PDF…"))
+            .clicked()
+        {
             self.export(p, g);
         }
         if !self.status.is_empty() {
@@ -371,17 +389,27 @@ impl eframe::App for App {
                 .filter_map(|f| f.path.clone())
                 .collect()
         });
+
         if !dropped.is_empty() {
             self.add_files(dropped);
         }
+
         let p = self.params();
         let g = layout::grid(&p);
         self.ensure_textures(ctx, g.rotated);
+
         egui::SidePanel::left("side")
             .min_width(330.0)
             .show(ctx, |ui| {
-                egui::ScrollArea::vertical().show(ui, |ui| self.side(ui, &p, &g));
+                egui::TopBottomPanel::bottom("side_settings")
+                    .resizable(false)
+                    .show_inside(ui, |ui| self.settings_ui(ui, &p, &g));
+
+                egui::CentralPanel::default()
+                    .frame(egui::Frame::NONE)
+                    .show_inside(ui, |ui| self.items_ui(ui, &g));
             });
+
         egui::CentralPanel::default().show(ctx, |ui| {
             egui::ScrollArea::both().show(ui, |ui| self.preview(ui, &p, &g));
         });
